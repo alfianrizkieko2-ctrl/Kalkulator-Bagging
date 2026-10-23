@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Berat Bagging</title>
+    <!-- Tailwind CSS untuk tata letak modern dan responsif -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2canvas untuk konversi HTML ke Gambar -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- SheetJS (XLSX Style) untuk pembuatan file Excel Asli Berwarna & Bergaris -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <style>
+        /* Pengaturan Font & Tampilan Dasar mirip Microsoft Excel */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f3f4f6;
+            color: #000;
+        }
+
+        /* Palet Warna Persis Sesuai Spesifikasi Header & Tabel Excel */
+        .bg-header-blue { background-color: #8ea9db !important; }      /* Header Smelter - Moisture */
+        .bg-header-pink { background-color: #d0cee5 !important; }      /* Header Berat Min & Max Target */
+        .bg-header-orange { background-color: #fce4d6 !important; }    /* Header Setingan Timbangan */
+        
+        .bg-col-smelter { background-color: #f8cecc !important; }      /* Kolom Nomor Smelter (Cokelat/Peach Muda) */
+        .bg-col-yellow { background-color: #fff2cc !important; }       /* Kolom Input Kustom B, C, D */
+        .bg-col-green { background-color: #e2efda !important; }        /* Kolom Hasil Rumus E, F */
+        .bg-col-orange { background-color: #ffd966 !important; }      /* Kolom Hasil Rumus G, H */
+
+        /* Border Tabel Tegas Mengikuti Excel */
+        table, th, td {
+            border: 1px solid #7f7f7f;
+        }
+
+        /* Style Input Form Sel */
+        input.cell-input {
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            text-align: center;
+            font-weight: 500;
+            outline: none;
+            padding: 4px;
+            font-size: 0.875rem;
+        }
+
+        input.cell-input:focus {
+            background-color: #ffffff !important;
+            box-shadow: inset 0 0 0 2px #2563eb;
+        }
+
+        /* Menghilangkan tombol panah/spinner pada input angka */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+
+        /* Modal Dialog Custom (Pengganti confirm) */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 50;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        /* Print Styling */
+        @page {
+            size: landscape;
+            margin: 8mm;
+        }
+
+        @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            body {
+                background-color: #ffffff !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                font-size: 11px !important;
+            }
+            .print-container {
+                box-shadow: none !important;
+                border: none !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            h1 {
+                font-size: 18px !important;
+                margin-bottom: 8px !important;
+            }
+            table {
+                width: 100% !important;
+                table-layout: fixed !important;
+                font-size: 10px !important;
+            }
+            th, td {
+                padding: 2px 3px !important;
+                height: 22px !important;
+                word-wrap: break-word !important;
+                overflow: hidden !important;
+            }
+            input.cell-input {
+                font-size: 10px !important;
+                padding: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+            .info-footer {
+                margin-top: 6px !important;
+            }
+        }
+    </style>
+</head>
+<body class="p-3 sm:p-6 min-h-screen flex flex-col items-center justify-start">
+
+    <!-- Container Utama -->
+    <div id="captureArea" class="print-container w-full max-w-7xl bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-300">
+        
+        <!-- Header Atas: Tanggal & Tombol Aksi -->
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-4 pb-3 border-b gap-3">
+            <div class="flex items-center space-x-2 text-sm sm:text-base font-bold text-gray-800">
+                <span>DATE :</span>
+                <span id="liveDateTime" class="font-semibold border border-gray-400 px-3 py-1 bg-gray-50 rounded text-blue-900">
+                    --/--/---- --:--
+                </span>
+            </div>
+            
+            <div class="flex flex-wrap gap-2 no-print">
+                <button onclick="confirmClearAll()" class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs sm:text-sm font-semibold transition shadow flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Reset Input
+                </button>
+                <button onclick="window.print()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-800 text-white rounded text-xs sm:text-sm font-semibold transition shadow flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                    Cetak / Print
+                </button>
+                <button onclick="exportToNativeExcel()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs sm:text-sm font-semibold transition shadow flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    Export Excel (.xlsx)
+                </button>
+                <button onclick="exportToImage()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs sm:text-sm font-semibold transition shadow flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    Download Foto (PNG)
+                </button>
+            </div>
+        </div>
+
+        <!-- Judul Utama -->
+        <h1 class="text-xl sm:text-3xl font-extrabold text-center tracking-wide mb-4 uppercase text-black">
+            BERAT BAGGING
+        </h1>
+
+        <!-- Tabel Bagging -->
+        <div id="tableContainer" class="overflow-x-auto">
+            <table class="w-full text-center border-collapse text-xs sm:text-sm">
+                <thead>
+                    <!-- Baris Header 1 -->
+                    <tr class="font-bold text-black h-10">
+                        <th rowspan="2" class="bg-header-blue w-12 sm:w-16 px-1 sm:px-2">SMELTER</th>
+                        <th rowspan="2" class="bg-header-blue px-1 sm:px-2 min-w-[100px]">PRODUCT</th>
+                        <th rowspan="2" class="bg-header-blue px-1 sm:px-2 min-w-[90px]">KEMASAN<br>J1/P1</th>
+                        <th rowspan="2" class="bg-header-blue px-1 sm:px-2 min-w-[110px]">MOISTURE CONTENT</th>
+                        <th rowspan="2" class="bg-header-pink px-1 sm:px-2 min-w-[140px]">BERAT MINIMUM<br>TARGET AKTUAL<br>PERSHIFT</th>
+                        <th rowspan="2" class="bg-header-pink px-1 sm:px-2 min-w-[140px]">BERAT MAXIMAL<br>ACTUAL PERSHIFT</th>
+                        <th colspan="2" class="bg-header-orange px-1 sm:px-2 border-b-0">SETINGAN TIMBANGAN 0.05</th>
+                    </tr>
+                    <!-- Baris Header 2 (Sub-header G & H) -->
+                    <tr class="font-bold text-black h-8">
+                        <th class="bg-header-orange px-1 sm:px-2 min-w-[100px]">BERAT MIN P1</th>
+                        <th class="bg-header-orange px-1 sm:px-2 min-w-[100px]">BERAT MAX P1</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- Baris 1 - 10 di-generate melalui JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer Informasi -->
+        <div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-2 info-footer">
+            <div class="bg-col-yellow text-black font-bold px-4 py-1.5 border border-black text-xs sm:text-sm tracking-wide shadow-sm">
+                ISI BAGIAN YANG WARNA KUNING
+            </div>
+            <span class="text-xs text-gray-500 no-print">*Format persen didukung otomatis (misal: 1.5%, 1.5, atau 0.015)</span>
+        </div>
+    </div>
+
+    <!-- Custom Modal Dialog untuk Konfirmasi Reset -->
+    <div id="resetModal" class="modal-overlay no-print">
+        <div class="bg-white rounded-lg p-6 max-w-md w-full shadow-xl mx-4">
+            <h3 class="text-lg font-bold text-gray-900 mb-2">Konfirmasi Reset</h3>
+            <p class="text-sm text-gray-600 mb-6">Apakah Anda yakin ingin mengosongkan semua data input?</p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeResetModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-medium text-sm transition">Batal</button>
+                <button onclick="executeClearAll()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-medium text-sm transition">Ya, Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script Logika & Rumus -->
+    <script>
+        const TOTAL_ROWS = 10;
+
+        function ceiling(number, significance) {
+            if (!significance) return number;
+            return Math.ceil(number / significance) * significance;
+        }
+
+        function floor(number, significance) {
+            if (!significance) return number;
+            return Math.floor(number / significance) * significance;
+        }
+
+        function parseMoisture(val) {
+            if (val === "" || val === null || val === undefined) return null;
+            let cleanVal = String(val).replace(',', '.').replace('%', '').trim();
+            let num = parseFloat(cleanVal);
+            if (isNaN(num)) return null;
+
+            if (num > 1) {
+                return num / 100;
+            }
+            return num;
+        }
+
+        function calculateRow(i) {
+            const kemasanInput = document.getElementById(`kemasan_${i}`).value.trim().toUpperCase();
+            const moistureRaw = document.getElementById(`moisture_${i}`).value.trim();
+            const moistureVal = parseMoisture(moistureRaw);
+
+            const cellE = document.getElementById(`calc_E_${i}`);
+            const cellF = document.getElementById(`calc_F_${i}`);
+            const cellG = document.getElementById(`calc_G_${i}`);
+            const cellH = document.getElementById(`calc_H_${i}`);
+
+            let valE = "";
+            let valF = "";
+            let valG = "";
+            let valH = "";
+
+            if ((kemasanInput === "J1" || kemasanInput === "P1") && moistureVal !== null) {
+                let tambahan = (kemasanInput === "J1") ? 1.5 : 2;
+                valE = 1000 + (1000 * moistureVal) + tambahan;
+            }
+
+            if (valE !== "") {
+                valF = valE + 3;
+            }
+
+            if (kemasanInput === "P1" && valE !== "") {
+                valG = ceiling(valE / 40, 0.05);
+            }
+
+            if (kemasanInput === "P1" && valF !== "") {
+                valH = floor(valF / 40, 0.05);
+            }
+
+            cellE.innerText = (valE !== "") ? Number(valE.toFixed(2)).toString() : "";
+            cellF.innerText = (valF !== "") ? Number(valF.toFixed(2)).toString() : "";
+            cellG.innerText = (valG !== "") ? valG.toFixed(2) : "";
+            cellH.innerText = (valH !== "") ? valH.toFixed(2) : "";
+        }
+
+        function formatMoistureInput(i) {
+            const input = document.getElementById(`moisture_${i}`);
+            let parsed = parseMoisture(input.value);
+            if (parsed !== null && input.value !== "") {
+                input.value = (parsed * 100).toFixed(2).replace('.00', '') + '%';
+            }
+        }
+
+        function buildTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            for (let i = 1; i <= TOTAL_ROWS; i++) {
+                const tr = document.createElement('tr');
+                tr.className = "h-8 sm:h-9 border-b border-gray-600";
+
+                tr.innerHTML = `
+                    <td class="bg-col-smelter font-bold text-black border border-gray-600">${i}</td>
+                    <td class="bg-col-yellow border border-gray-600 p-0">
+                        <input type="text" id="product_${i}" class="cell-input" placeholder="" />
+                    </td>
+                    <td class="bg-col-yellow border border-gray-600 p-0">
+                        <input type="text" id="kemasan_${i}" class="cell-input uppercase" placeholder="P1 / J1" oninput="calculateRow(${i})" />
+                    </td>
+                    <td class="bg-col-yellow border border-gray-600 p-0">
+                        <input type="text" id="moisture_${i}" class="cell-input" placeholder="e.g. 1.5%" oninput="calculateRow(${i})" onblur="formatMoistureInput(${i}); calculateRow(${i});" />
+                    </td>
+                    <td id="calc_E_${i}" class="bg-col-green font-bold text-black border border-gray-600"></td>
+                    <td id="calc_F_${i}" class="bg-col-green font-bold text-black border border-gray-600"></td>
+                    <td id="calc_G_${i}" class="bg-col-orange font-bold text-black border border-gray-600"></td>
+                    <td id="calc_H_${i}" class="bg-col-orange font-bold text-black border border-gray-600"></td>
+                `;
+
+                tbody.appendChild(tr);
+            }
+        }
+
+        function confirmClearAll() {
+            document.getElementById('resetModal').classList.add('active');
+        }
+
+        function closeResetModal() {
+            document.getElementById('resetModal').classList.remove('active');
+        }
+
+        function executeClearAll() {
+            for (let i = 1; i <= TOTAL_ROWS; i++) {
+                document.getElementById(`product_${i}`).value = '';
+                document.getElementById(`kemasan_${i}`).value = '';
+                document.getElementById(`moisture_${i}`).value = '';
+                calculateRow(i);
+            }
+            closeResetModal();
+        }
+
+        function updateDateTime() {
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+            const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            document.getElementById('liveDateTime').innerText = `${dateStr} ${timeStr}`;
+        }
+
+        // Export Ke File Excel Asli (.xlsx) Berwarna & Bergaris Kompatibel di HP & PC
+        function exportToNativeExcel() {
+            if (typeof XLSX === 'undefined') {
+                alert('Pustaka Excel sedang dimuat, harap coba beberapa detik lagi.');
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+
+            // Border universal
+            const borderStyle = {
+                top: { style: "thin", color: { rgb: "000000" } },
+                bottom: { style: "thin", color: { rgb: "000000" } },
+                left: { style: "thin", color: { rgb: "000000" } },
+                right: { style: "thin", color: { rgb: "000000" } }
+            };
+
+            // Style Header
+            const styleBlueHeader = { font: { bold: true, size: 10 }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, fill: { fgColor: { rgb: "8EA9DB" } }, border: borderStyle };
+            const stylePinkHeader = { font: { bold: true, size: 10 }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, fill: { fgColor: { rgb: "D0CEE5" } }, border: borderStyle };
+            const styleOrangeHeader = { font: { bold: true, size: 10 }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, fill: { fgColor: { rgb: "FCE4D6" } }, border: borderStyle };
+
+            // Style Data
+            const styleSmelter = { font: { bold: true, size: 10 }, alignment: { horizontal: "center" }, fill: { fgColor: { rgb: "F8CECC" } }, border: borderStyle };
+            const styleYellow = { font: { size: 10 }, alignment: { horizontal: "center" }, fill: { fgColor: { rgb: "FFF2CC" } }, border: borderStyle };
+            const styleGreen = { font: { bold: true, size: 10 }, alignment: { horizontal: "center" }, fill: { fgColor: { rgb: "E2EFDA" } }, border: borderStyle };
+            const styleOrangeData = { font: { bold: true, size: 10 }, alignment: { horizontal: "center" }, fill: { fgColor: { rgb: "FFD966" } }, border: borderStyle };
+
+            // Susun Data Matriks
+            const wsData = [
+                // Baris 0: Judul
+                [{ v: "BERAT BAGGING", s: { font: { bold: true, size: 14 }, alignment: { horizontal: "center" } } }, "", "", "", "", "", "", ""],
+                
+                // Baris 1: Header Atas
+                [
+                    { v: "SMELTER", s: styleBlueHeader },
+                    { v: "PRODUCT", s: styleBlueHeader },
+                    { v: "KEMASAN\nJ1/P1", s: styleBlueHeader },
+                    { v: "MOISTURE CONTENT", s: styleBlueHeader },
+                    { v: "BERAT MINIMUM\nTARGET AKTUAL\nPERSHIFT", s: stylePinkHeader },
+                    { v: "BERAT MAXIMAL\nACTUAL PERSHIFT", s: stylePinkHeader },
+                    { v: "SETINGAN TIMBANGAN 0.05", s: styleOrangeHeader },
+                    ""
+                ],
+                // Baris 2: Sub Header
+                [
+                    "", "", "", "", "", "",
+                    { v: "BERAT MIN P1", s: styleOrangeHeader },
+                    { v: "BERAT MAX P1", s: styleOrangeHeader }
+                ]
+            ];
+
+            // Masukkan 10 Baris Data
+            for (let i = 1; i <= TOTAL_ROWS; i++) {
+                const p = document.getElementById(`product_${i}`).value;
+                const k = document.getElementById(`kemasan_${i}`).value;
+                const m = document.getElementById(`moisture_${i}`).value;
+                const e = document.getElementById(`calc_E_${i}`).innerText;
+                const f = document.getElementById(`calc_F_${i}`).innerText;
+                const g = document.getElementById(`calc_G_${i}`).innerText;
+                const h = document.getElementById(`calc_H_${i}`).innerText;
+
+                wsData.push([
+                    { v: i, s: styleSmelter },
+                    { v: p, s: styleYellow },
+                    { v: k, s: styleYellow },
+                    { v: m, s: styleYellow },
+                    { v: e, s: styleGreen },
+                    { v: f, s: styleGreen },
+                    { v: g, s: styleOrangeData },
+                    { v: h, s: styleOrangeData }
+                ]);
+            }
+
+            const ws = XLSX.utils.aoa_to_sheet([]);
+            
+            // Penggabungan Sel (Merge)
+            ws['!merges'] = [
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } }, // Judul
+                { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } }, // SMELTER
+                { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } }, // PRODUCT
+                { s: { r: 1, c: 2 }, e: { r: 2, c: 2 } }, // KEMASAN
+                { s: { r: 1, c: 3 }, e: { r: 2, c: 3 } }, // MOISTURE
+                { s: { r: 1, c: 4 }, e: { r: 2, c: 4 } }, // BERAT MIN
+                { s: { r: 1, c: 5 }, e: { r: 2, c: 5 } }, // BERAT MAX
+                { s: { r: 1, c: 6 }, e: { r: 1, c: 7 } }  // SETINGAN TIMBANGAN
+            ];
+
+            // Tentukan Lebar Kolom
+            ws['!cols'] = [
+                { wch: 10 }, { wch: 16 }, { wch: 14 }, { wch: 18 },
+                { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 16 }
+            ];
+
+            // Tulis Sel ke Sheet
+            for (let r = 0; r < wsData.length; r++) {
+                for (let c = 0; c < wsData[r].length; c++) {
+                    const cell = wsData[r][c];
+                    if (cell) {
+                        const cellRef = XLSX.utils.encode_cell({ r: r, c: c });
+                        ws[cellRef] = cell;
+                    }
+                }
+            }
+
+            ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: wsData.length - 1, c: 7 } });
+
+            XLSX.utils.book_append_sheet(wb, ws, "Berat Bagging");
+
+            // Simpan sebagai file Excel asli (.xlsx)
+            XLSX.writeFile(wb, `BERAT_BAGGING_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+
+        // Export ke Gambar PNG HD
+        function exportToImage() {
+            const captureArea = document.getElementById('captureArea');
+            const tableContainer = document.getElementById('tableContainer');
+
+            const originalCaptureWidth = captureArea.style.width;
+            const originalOverflow = tableContainer.style.overflow;
+
+            const inputs = captureArea.querySelectorAll('input.cell-input');
+            const inputDataList = [];
+            inputs.forEach(input => {
+                const parentTd = input.parentElement;
+                inputDataList.push({ parent: parentTd, inputElement: input, value: input.value });
+                
+                const span = document.createElement('span');
+                span.innerText = input.value;
+                span.className = "font-medium text-sm px-2 block text-center";
+                parentTd.innerHTML = '';
+                parentTd.appendChild(span);
+            });
+
+            captureArea.style.width = '1200px'; 
+            tableContainer.style.overflow = 'visible';
+
+            html2canvas(captureArea, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                scrollX: 0,
+                scrollY: 0,
+                windowWidth: 1250
+            }).then(canvas => {
+                inputDataList.forEach(item => {
+                    item.parent.innerHTML = '';
+                    item.parent.appendChild(item.inputElement);
+                    item.inputElement.value = item.value;
+                });
+
+                captureArea.style.width = originalCaptureWidth;
+                tableContainer.style.overflow = originalOverflow;
+
+                const link = document.createElement('a');
+                link.download = `BERAT_BAGGING_${new Date().toISOString().slice(0,10)}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            }).catch(err => {
+                inputDataList.forEach(item => {
+                    item.parent.innerHTML = '';
+                    item.parent.appendChild(item.inputElement);
+                    item.inputElement.value = item.value;
+                });
+                captureArea.style.width = originalCaptureWidth;
+                tableContainer.style.overflow = originalOverflow;
+                console.error(err);
+            });
+        }
+
+        // On Load Init
+        window.onload = function() {
+            buildTable();
+            updateDateTime();
+            setInterval(updateDateTime, 10000);
+        };
+    </script>
+</body>
+</html>
